@@ -181,6 +181,39 @@ button {
   grid-template-columns: 86px minmax(0, 1fr);
 }
 
+.check-row {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 12px;
+  color: #394356;
+}
+
+.check-row input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--accent);
+}
+
+.range-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.range-row input {
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.range-row output {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+
 label {
   color: #586172;
   font-size: 13px;

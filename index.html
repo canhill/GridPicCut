@@ -71,6 +71,15 @@
               <option value="image/webp">WebP</option>
             </select>
           </div>
+          <label class="check-row">
+            <input id="autoTrimInput" type="checkbox" />
+            <span>自动去除白边/纯色边框</span>
+          </label>
+          <div class="range-row">
+            <label for="trimToleranceInput">容差</label>
+            <input id="trimToleranceInput" type="range" min="8" max="60" value="24" />
+            <output id="trimToleranceOutput">24</output>
+          </div>
           <button id="exportBtn" class="primary" type="button">一键剪切并导出</button>
           <p id="exportStatus" class="status"></p>
         </section>

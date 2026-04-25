@@ -19,6 +19,9 @@ const exportBtn = $("#exportBtn");
 const exportStatus = $("#exportStatus");
 const prefixInput = $("#prefixInput");
 const formatSelect = $("#formatSelect");
+const autoTrimInput = $("#autoTrimInput");
+const trimToleranceInput = $("#trimToleranceInput");
+const trimToleranceOutput = $("#trimToleranceOutput");
 const fitBtn = $("#fitBtn");
 const resetBtn = $("#resetBtn");
 
@@ -53,6 +56,9 @@ clearSlicesBtn.addEventListener("click", clearFreeSlices);
 fitBtn.addEventListener("click", fitImage);
 resetBtn.addEventListener("click", resetCurrentImage);
 exportBtn.addEventListener("click", exportSlices);
+trimToleranceInput.addEventListener("input", () => {
+  trimToleranceOutput.value = trimToleranceInput.value;
+});
 
 document.querySelectorAll(".grid-preset").forEach((button) => {
   button.addEventListener("click", () => {
@@ -535,7 +541,10 @@ async function exportSlices() {
     const image = state.images[imageIndex];
     const regions = state.mode === "grid" ? getGridRegions(image) : getFreeRegions(image);
     for (let regionIndex = 0; regionIndex < regions.length; regionIndex += 1) {
-      const blob = await cropToBlob(image, regions[regionIndex], format);
+      const region = autoTrimInput.checked
+        ? detectContentRect(image, Number(trimToleranceInput.value), regions[regionIndex])
+        : regions[regionIndex];
+      const blob = await cropToBlob(image, region, format);
       const name = `${prefix}_${pad(imageIndex + 1)}_${pad(regionIndex + 1)}.${ext}`;
       if (directory) {
         const handle = await directory.getFileHandle(name, { create: true });
@@ -554,7 +563,7 @@ async function exportSlices() {
   setStatus(directory ? `Done. Saved ${count} images to the selected folder.` : `Done. Downloaded ${count} images.`);
 }
 
-function getGridRegions(image) {
+function getGridRegions(image, baseRect = fullImageRect(image)) {
   const grid = image.grid;
   const xs = [
     grid.left,
@@ -570,21 +579,23 @@ function getGridRegions(image) {
   for (let r = 0; r < grid.rows; r += 1) {
     for (let c = 0; c < grid.cols; c += 1) {
       regions.push({
-        x: Math.round(xs[c] * image.img.naturalWidth),
-        y: Math.round(ys[r] * image.img.naturalHeight),
-        w: Math.max(1, Math.round((xs[c + 1] - xs[c]) * image.img.naturalWidth)),
-        h: Math.max(1, Math.round((ys[r + 1] - ys[r]) * image.img.naturalHeight)),
+        x: Math.round(baseRect.x + xs[c] * baseRect.w),
+        y: Math.round(baseRect.y + ys[r] * baseRect.h),
+        w: Math.max(1, Math.round((xs[c + 1] - xs[c]) * baseRect.w)),
+        h: Math.max(1, Math.round((ys[r + 1] - ys[r]) * baseRect.h)),
       });
     }
   }
   return regions;
 }
 
-function getFreeRegions(image) {
+function getFreeRegions(image, baseRect = fullImageRect(image)) {
   if (!image.freeSlices.length) {
-    return [{ x: 0, y: 0, w: image.img.naturalWidth, h: image.img.naturalHeight }];
+    return [baseRect];
   }
-  return image.freeSlices.map((slice) => normalizeSlice(slice, image));
+  return image.freeSlices
+    .map((slice) => intersectRects(normalizeSlice(slice, image), baseRect))
+    .filter((region) => region.w > 0 && region.h > 0);
 }
 
 async function cropToBlob(image, region, format) {
@@ -702,6 +713,182 @@ function normalizeSlice(slice, image) {
     y,
     w: clamp(Math.round(slice.w), 1, image.img.naturalWidth - x),
     h: clamp(Math.round(slice.h), 1, image.img.naturalHeight - y),
+  };
+}
+
+function normalizeRegion(region, image) {
+  const x = clamp(Math.round(region.x), 0, image.img.naturalWidth - 1);
+  const y = clamp(Math.round(region.y), 0, image.img.naturalHeight - 1);
+  return {
+    x,
+    y,
+    w: clamp(Math.round(region.w), 1, image.img.naturalWidth - x),
+    h: clamp(Math.round(region.h), 1, image.img.naturalHeight - y),
+  };
+}
+
+function detectContentRect(image, tolerance, region = fullImageRect(image)) {
+  const width = image.img.naturalWidth;
+  const height = image.img.naturalHeight;
+  const safeRegion = normalizeRegion(region, image);
+  const maxScanSize = 1200;
+  const scanScale = Math.min(1, maxScanSize / Math.max(safeRegion.w, safeRegion.h));
+  const scanWidth = Math.max(1, Math.round(safeRegion.w * scanScale));
+  const scanHeight = Math.max(1, Math.round(safeRegion.h * scanScale));
+  const source = document.createElement("canvas");
+  source.width = scanWidth;
+  source.height = scanHeight;
+  const sourceCtx = source.getContext("2d", { willReadFrequently: true });
+  sourceCtx.imageSmoothingEnabled = false;
+  sourceCtx.drawImage(image.img, safeRegion.x, safeRegion.y, safeRegion.w, safeRegion.h, 0, 0, scanWidth, scanHeight);
+  const pixels = sourceCtx.getImageData(0, 0, scanWidth, scanHeight).data;
+  const background = sampleBackgroundColor(pixels, scanWidth, scanHeight);
+
+  const backgroundBounds = findContentBounds(pixels, scanWidth, scanHeight, (color) => {
+    return !isBorderPixel(color, background, tolerance);
+  });
+  const whiteBounds = findContentBounds(pixels, scanWidth, scanHeight, (color) => {
+    return !isWhiteOrTransparentPixel(color, tolerance);
+  });
+  const bounds = chooseTrimBounds([backgroundBounds, whiteBounds], scanWidth, scanHeight);
+
+  if (!bounds) return safeRegion;
+
+  const padding = Math.max(1, Math.round(Math.min(scanWidth, scanHeight) * 0.003));
+  const left = clamp(bounds.left - padding, 0, scanWidth - 1);
+  const right = clamp(bounds.right + padding, 0, scanWidth - 1);
+  const top = clamp(bounds.top - padding, 0, scanHeight - 1);
+  const bottom = clamp(bounds.bottom + padding, 0, scanHeight - 1);
+
+  const rect = {
+    x: safeRegion.x + Math.floor(left / scanScale),
+    y: safeRegion.y + Math.floor(top / scanScale),
+    w: Math.ceil((right - left + 1) / scanScale),
+    h: Math.ceil((bottom - top + 1) / scanScale),
+  };
+
+  const removedTooMuch = rect.w < safeRegion.w * 0.18 || rect.h < safeRegion.h * 0.18;
+  const barelyChanged = rect.w > safeRegion.w * 0.995 && rect.h > safeRegion.h * 0.995;
+  return removedTooMuch || barelyChanged ? safeRegion : normalizeRegion(rect, image);
+}
+
+function sampleBackgroundColor(pixels, width, height) {
+  const patch = clamp(Math.round(Math.min(width, height) * 0.025), 1, Math.min(width, height));
+  const samples = [
+    averagePatch(pixels, width, 0, 0, patch, patch),
+    averagePatch(pixels, width, width - patch, 0, patch, patch),
+    averagePatch(pixels, width, 0, height - patch, patch, patch),
+    averagePatch(pixels, width, width - patch, height - patch, patch, patch),
+  ];
+  return {
+    r: Math.round(samples.reduce((sum, color) => sum + color.r, 0) / samples.length),
+    g: Math.round(samples.reduce((sum, color) => sum + color.g, 0) / samples.length),
+    b: Math.round(samples.reduce((sum, color) => sum + color.b, 0) / samples.length),
+    a: Math.round(samples.reduce((sum, color) => sum + color.a, 0) / samples.length),
+  };
+}
+
+function findContentBounds(pixels, width, height, isContentPixel) {
+  let left = width;
+  let right = -1;
+  let top = height;
+  let bottom = -1;
+  const stride = width * height > 900000 ? 2 : 1;
+
+  for (let y = 0; y < height; y += stride) {
+    for (let x = 0; x < width; x += stride) {
+      if (isContentPixel(pixelAt(pixels, width, x, y))) {
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+
+  if (right < left || bottom < top) return null;
+  return { left, right, top, bottom };
+}
+
+function chooseTrimBounds(candidates, width, height) {
+  const valid = candidates.filter(Boolean).filter((bounds) => {
+    const w = bounds.right - bounds.left + 1;
+    const h = bounds.bottom - bounds.top + 1;
+    return w >= width * 0.18 && h >= height * 0.18;
+  });
+  if (!valid.length) return null;
+  return valid.sort((a, b) => trimScore(b, width, height) - trimScore(a, width, height))[0];
+}
+
+function trimScore(bounds, width, height) {
+  const w = bounds.right - bounds.left + 1;
+  const h = bounds.bottom - bounds.top + 1;
+  return width * height - w * h;
+}
+
+function isBorderPixel(color, background, tolerance) {
+  if (color.a <= 8) return true;
+  return isWhiteOrTransparentPixel(color, tolerance) || colorDistance(color, background) <= tolerance;
+}
+
+function isWhiteOrTransparentPixel(color, tolerance) {
+  if (color.a <= 8) return true;
+  const whiteDistance = Math.max(Math.abs(255 - color.r), Math.abs(255 - color.g), Math.abs(255 - color.b));
+  return whiteDistance <= tolerance;
+}
+
+function pixelAt(pixels, width, x, y) {
+  const index = (y * width + x) * 4;
+  return {
+    r: pixels[index],
+    g: pixels[index + 1],
+    b: pixels[index + 2],
+    a: pixels[index + 3],
+  };
+}
+
+function averagePatch(pixels, width, x, y, w, h) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let a = 0;
+  let count = 0;
+  for (let yy = y; yy < y + h; yy += 1) {
+    for (let xx = x; xx < x + w; xx += 1) {
+      const color = pixelAt(pixels, width, xx, yy);
+      r += color.r;
+      g += color.g;
+      b += color.b;
+      a += color.a;
+      count += 1;
+    }
+  }
+  return {
+    r: r / count,
+    g: g / count,
+    b: b / count,
+    a: a / count,
+  };
+}
+
+function colorDistance(a, b) {
+  return Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b), Math.abs(a.a - b.a));
+}
+
+function fullImageRect(image) {
+  return { x: 0, y: 0, w: image.img.naturalWidth, h: image.img.naturalHeight };
+}
+
+function intersectRects(a, b) {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w);
+  const y2 = Math.min(a.y + a.h, b.y + b.h);
+  return {
+    x: Math.round(x1),
+    y: Math.round(y1),
+    w: Math.max(0, Math.round(x2 - x1)),
+    h: Math.max(0, Math.round(y2 - y1)),
   };
 }
 
