@@ -12,7 +12,9 @@
 
 在当前目录启动任意本地静态服务器，然后打开 `index.html`。
 
-如果电脑有 Python：
+###可以直接用浏览器打开index.html
+
+###如果电脑有 Python：
 
 ```powershell
 python -m http.server 5173
