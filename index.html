@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>图片宫格裁剪工具</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">切</div>
+          <div>
+            <h1>图片切片台</h1>
+            <p>宫格裁剪 · 自由切片 · 批量导出</p>
+          </div>
+        </div>
+
+        <label class="upload-zone" for="fileInput">
+          <input id="fileInput" type="file" accept="image/*" multiple />
+          <span class="upload-icon">+</span>
+          <strong>选择图片</strong>
+          <small>支持一次导入多张</small>
+        </label>
+
+        <section class="panel">
+          <div class="panel-title">裁剪模式</div>
+          <div class="segmented" role="tablist" aria-label="裁剪模式">
+            <button id="gridModeBtn" class="active" type="button">宫格</button>
+            <button id="freeModeBtn" type="button">自由</button>
+          </div>
+        </section>
+
+        <section id="gridPanel" class="panel">
+          <div class="panel-title">规则尺寸</div>
+          <div class="grid-options">
+            <button type="button" class="grid-preset active" data-size="2">2×2</button>
+            <button type="button" class="grid-preset" data-size="3">3×3</button>
+            <button type="button" class="grid-preset" data-size="4">4×4</button>
+            <button type="button" class="grid-preset" data-size="5">5×5</button>
+          </div>
+          <div class="form-row">
+            <label for="rowInput">行</label>
+            <input id="rowInput" type="number" min="1" max="12" value="2" />
+            <label for="colInput">列</label>
+            <input id="colInput" type="number" min="1" max="12" value="2" />
+          </div>
+        </section>
+
+        <section id="freePanel" class="panel hidden">
+          <div class="panel-title">自由切片</div>
+          <div class="button-row">
+            <button id="addSliceBtn" class="secondary" type="button">添加切片</button>
+            <button id="clearSlicesBtn" class="ghost" type="button">清空</button>
+          </div>
+          <p class="hint">可添加多个切片；拖动框内移动，拖动边线或角点缩放。</p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">导出</div>
+          <div class="form-row">
+            <label for="prefixInput">文件名前缀</label>
+            <input id="prefixInput" type="text" value="slice" />
+          </div>
+          <div class="form-row">
+            <label for="formatSelect">格式</label>
+            <select id="formatSelect">
+              <option value="image/png">PNG</option>
+              <option value="image/jpeg">JPG</option>
+              <option value="image/webp">WebP</option>
+            </select>
+          </div>
+          <button id="exportBtn" class="primary" type="button">一键剪切并导出</button>
+          <p id="exportStatus" class="status"></p>
+        </section>
+
+        <section class="panel image-list-panel">
+          <div class="panel-title">图片列表</div>
+          <div id="imageList" class="image-list"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h2 id="imageTitle">请先选择图片</h2>
+            <p id="imageMeta">宫格模式可拖动外框、边线、角点和内部宫格线；自由模式可创建多个切片框。</p>
+          </div>
+          <div class="top-actions">
+            <button id="fitBtn" class="secondary" type="button">适应画布</button>
+            <button id="resetBtn" class="ghost" type="button">重置当前</button>
+          </div>
+        </header>
+
+        <div class="stage-wrap">
+          <canvas id="stageCanvas"></canvas>
+          <div id="emptyState" class="empty-state">
+            <strong>选择图片开始裁剪</strong>
+            <span>支持 4、9、16、25 宫格，也支持自由框选多张切片。</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

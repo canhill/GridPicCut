@@ -1,0 +1,12 @@
+# Local source images and exported slices
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+新建文件夹/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
